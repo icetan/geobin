@@ -1,7 +1,6 @@
 var http = require('http')
 ,parseUrl = require('url').parse
 ,mongodb = require('mongodb')
-,ObjectID = mongodb.ObjectID
 ,oauth = require('./oauth');
 
 var conf = {
@@ -14,7 +13,8 @@ var conf = {
 ,db = new mongodb.Db('test'
   ,new mongodb.Server(conf.dbHost, conf.dbPort)
   ,{native_parser: true})
-,ObjectID = db.bson_serializer.ObjectID
+,ObjectID = db.bson_serializer.ObjectID  
+,Timestamp = db.bson_serializer.Timestamp
 ,getCollection = function (name, fn) {
   if (db.state === 'notConnected') {
     db.open(function (err, p_client) {
@@ -26,9 +26,10 @@ var conf = {
 }
 ,geoToDoc = function (geo) {
   if (typeof geo.category !== 'string') throw 'geo.category must be a string';
+  if (typeof geo.msg !== 'string') throw 'geo.msg must be a string';
   return {
     loc: [geo.lon, geo.lat]
-    ,cat: geo.category
+    ,category: geo.category
     ,data: {msg: geo.msg}
   };
 }
@@ -39,6 +40,7 @@ var conf = {
     ,lat: doc.loc[1]
     ,msg: doc.data.msg
     ,category: doc.category
+    ,timestamp: parseInt(doc.timestamp)
   };
 }
 
@@ -79,10 +81,19 @@ var conf = {
       GET: function () {
         getCollection('location', function (err, collection) {
           var parts = parseUrl(req.url).pathname.split('/');
-          console.log('DEBUG: Finding location ID: '+parts[2]);
-          collection.find({_id:new ObjectID(parts[2])}).nextObject(function (err, doc) {
-            jsonChain(err, req, res, endChain, docToGeo(doc));
-          });
+          if (parts.length === 2) {
+            console.log('DEBUG: Finding five latest geo\'s inserted');
+            collection.find({}, {sort:['_id','desc'], limit:5}).toArray(function (err, docs) {
+              var list = new Array(docs.length);
+              for (var i = 0; i < docs.length; i++) list[i] = docToGeo(docs[i]); 
+              jsonChain(err, req, res, endChain, list);
+            });
+          } else if (parts.length === 3) {
+            console.log('DEBUG: Finding location ID: '+parts[2]);
+            collection.find({_id:new ObjectID(parts[2])}).nextObject(function (err, doc) {
+              jsonChain(err, req, res, endChain, docToGeo(doc));
+            });
+          }
         });
       }
       ,POST: function () {
@@ -91,6 +102,7 @@ var conf = {
         req.on('end', function() {
           console.log('DEBUG: Data from POST recived: '+data);
           var doc = geoToDoc(JSON.parse(data));
+          doc.timestamp = new Timestamp(Date.now());
           console.log('DEBUG: Inserting into database:');
           console.dir(doc);
           getCollection('location', function (err, collection) {
