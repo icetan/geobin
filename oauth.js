@@ -34,12 +34,12 @@ var paramEncode = function (data) {
     +url_.pathname;
 }
 ,signature = function (opt) {
-  var text = opt.method.toUpperCase()
+  var text = opt.httpMethod.toUpperCase()
     +'&'+paramEncode(constructRequestUrl(opt.url))
     +'&'+paramEncode(normalizeRequestParameters(opt.params))
-  ,key = paramEncode(opt.consumerSecret || 'anonymous')
+  ,key = paramEncode(opt.consumerSecret)
     +'&'+paramEncode(opt.tokenSecret);
-  if (opt.type === 'HMAC-SHA1')
+  if (opt.method === 'HMAC-SHA1')
     return crypto.createHmac('sha1', key).update(text).digest('base64');
 }
 
@@ -69,24 +69,10 @@ var paramEncode = function (data) {
     ,algorithm);
 };
 
-//var Token = function (opt) {
-//  this.key = opt.key;
-//  this.secret = opt.secret;
-//  this.verifier = opt.verifier || null;
-//  this.authorized = opt.authorized || false;
-//};
-//
-//Token.prototype = {
-//  paramEncode: function () {
-//    return 'oauth_token='+this.key+'&oauth_token_secret='+this.secret;
-//  }
-//};
-//
 //var requestToken = function (opt, callback) {
 //  // {consumerKey, nonce, signatureMethod, signature, timestamp, callbackUrl} = opt
 //  callback(err, token);
 //};  
-//    
 //var accessToken = function (opt, callback) {
 //  // {consumerKey, token, verifier, signatureMethod, signature, timestamp, nonce} = opt
 //  callback(err, token);

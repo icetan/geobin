@@ -26,14 +26,45 @@ var conf = {
 }
 
 ,server = http.createServer()
+,endChain = function (err, req, res, callback) {
+  if (err) {
+    console.log('Error occured: '+err);
+    res.writeHead(500);
+    res.end();
+    return;
+  }
+  res.end();
+  callback(err, req, res);
+}
+,textChain = function (err, req, res, callback, data) {
+  res.setHeader('Content-Type', 'text/plain');
+  res.write(data);
+  callback(err, req, res);
+}
+,jsonChain = function (err, req, res, callback, data) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  if (data) {
+    data = JSON.stringify(data);
+    var query = parseUrl(req.url, true).query;
+    if (query.jsonp) {
+      res.setHeader('Content-Type', 'application/javascript');
+      data = query.jsonp+'('+data+');';
+    } else {
+      res.setHeader('Content-Type', 'application/json');
+    }
+  }
+  res.write(data);
+  callback(err, req, res);
+}
 ,dispatch = {
-  loc: function (url, req, callback) {
+  loc: function (req, res) {
     ({
       GET: function () {
         getCollection('location', function (err, collection) {
-          console.log('DEBUG: Finding location ID: '+url.parts[1]);
-          collection.find({_id:new ObjectID(url.parts[1])}).nextObject(function (err, doc) {
-            callback(err, doc);
+          var parts = parseUrl(req.url).pathname.split('/');
+          console.log('DEBUG: Finding location ID: '+parts[2]);
+          collection.find({_id:new ObjectID(parts[2])}).nextObject(function (err, doc) {
+            jsonChain(err, req, res, endChain, doc);
           });
         });
       }
@@ -50,55 +81,56 @@ var conf = {
                 ,data: {msg: loc.msg}
               }
               ,function (err, docs) {
-                 callback(err); 
+                endChain(err, req, res);
               });
             });
           } catch (err) {
-            callback(err);
+            endChain(err, req, res);
           }
         });
       }
-    })[url.method]();
+    })[req.method]();
+  }
+  
+  ,oauth: function (req, res) {
+    ({
+      GET: function () {
+        var query = parseUrl(req.url, true).query
+        ,signature = oauth.signature({
+          httpMethod: req.method
+          ,url: req.url
+          ,params: query
+          ,consumerSecret: 'anonymous'
+          ,method: quety.oauth_signature_method
+        });
+        console.log('DEBUG: OAuth request signature is: ""'+query.oauth_signature
+          +'", server signature is: "'+signature);
+        var token = oauth.createRequestToken({
+          nonce: query.oauth_nonce
+          ,consumerSecret: 'anonymous'
+          ,signature: query.oauth_signature
+        });
+        console.log('DEBUG: OAuth request token created: '+console.dir(token));
+      }
+    })[req.method]();
   }
 };
 
 server.on('request', function (req, res) {
-  var url = parseUrl(req.url, true)
-  ,handler = function (err, data) {
-    if (err) {
-      console.log('Error occured: '+err);
-      res.writeHead(500);
-      res.end();          
-      return;
-    }
-    if (data) {
-      data = JSON.stringify(data);
-      if (url.query.jsonp) {
-        res.setHeader('Content-Type', 'application/javascript');
-        data = url.query.jsonp+'('+data+');';
-      } else {
-        res.setHeader('Content-Type', 'application/json');
-      }
-    }
-    res.writeHead(200, {'Access-Control-Allow-Origin': '*'});
-    res.end(data);
-  };
-  url.parts = url.pathname.split('/').splice(1);
-  url.method = req.method.toUpperCase();
-
-  console.log('DEBUG: Incoming request: '+JSON.stringify(url));
+  var parts = parseUrl(req.url).pathname.split('/');
+  console.log('DEBUG: Incoming request: '+req.url);
   try {
-    if (url.method === 'OPTIONS') {
+    if (req.method === 'OPTIONS') {
       res.writeHead(200, {
         'Access-Control-Allow-Origin': '*'
         ,'Access-Control-Allow-Headers': 'X-Requested-With'
       });
       res.end();
     } else {
-      dispatch[url.parts[0]](url, req, handler);
+      dispatch[parts[1]](req, res);
     }
   } catch (err) {
-    handler(err);
+    endChain(err, req, res);
   }
 });
 
