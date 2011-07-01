@@ -1,16 +1,18 @@
 var http = require('http')
 ,parseUrl = require('url').parse
 ,mongodb = require('mongodb')
-,oauth = require('./oauth');
+,oauth = require('./oauth')
+,Dispatch = require('./dispatch').Dispatch;
 
 var conf = {
   serverHost: '0.0.0.0'
   ,serverPort: 8124
   ,dbHost: '127.0.0.1'
   ,dbPort: 27017
+  ,dbName: 'test'
 }
 
-,db = new mongodb.Db('test'
+,db = new mongodb.Db(conf.dbName
   ,new mongodb.Server(conf.dbHost, conf.dbPort)
   ,{native_parser: true})
 ,ObjectID = db.bson_serializer.ObjectID  
@@ -24,6 +26,7 @@ var conf = {
     db.collection(name, fn);
   }
 }
+
 ,geoToDoc = function (geo) {
   if (typeof geo.category !== 'string') throw 'geo.category must be a string';
   if (typeof geo.msg !== 'string') throw 'geo.msg must be a string';
@@ -45,6 +48,9 @@ var conf = {
 }
 
 ,server = http.createServer()
+,parsePathname = function(req) {
+  return parseUrl(req.url).pathname.split('/').splice(1);
+}
 ,endChain = function (err, req, res, fn) {
   if (err) {
     console.log('Error occured: '+err);
@@ -75,12 +81,12 @@ var conf = {
   res.write(data);
   if (fn) fn(err, req, res);
 }
-,dispatch = {
-  geo: function (req, res) {
+
+,dispatch = new Dispatch({
+  '^/geo/(.+)$': function (id, pathname, req, res) {
     ({
       GET: function () {
         getCollection('location', function (err, collection) {
-          var parts = parseUrl(req.url).pathname.split('/');
           if (parts.length === 2) {
             console.log('DEBUG: Finding five latest geo\'s inserted');
             collection.find({}, {sort:['_id','desc'], limit:5}).toArray(function (err, docs) {
@@ -94,6 +100,21 @@ var conf = {
               jsonChain(err, req, res, endChain, docToGeo(doc));
             });
           }
+        });
+      }
+    })[req.method]();
+  }
+  ,'^/geo$': function (pathname, req, res) {
+    console.log(pathname+' '+req.method);
+    ({
+      GET: function () {
+        getCollection('location', function (err, collection) {
+          console.log('DEBUG: Finding five latest geo\'s inserted');
+          collection.find({}, {sort:['_id','desc'], limit:5}).toArray(function (err, docs) {
+            var list = new Array(docs.length);
+            for (var i = 0; i < docs.length; i++) list[i] = docToGeo(docs[i]); 
+            jsonChain(err, req, res, endChain, list);
+          });
         });
       }
       ,POST: function () {
@@ -112,10 +133,13 @@ var conf = {
           });
         });
       }
-    })[req.method]();
+    })[req.method];
+  }
+
+  ,'^/user/(.+)$': function (user, pathname, req, res) {
   }
   
-  ,oauth: function (req, res) {
+  ,'^/oauth$': function (pathname, req, res) {
     ({
       GET: function () {
         var query = parseUrl(req.url, true).query
@@ -137,12 +161,12 @@ var conf = {
       }
     })[req.method]();
   }
-};
+});
 
 server.on('request', function (req, res) {
-  var parts = parseUrl(req.url).pathname.split('/');
+  var url = parseUrl(req.url);
   console.log('DEBUG: Incoming '+req.method+' request: '+req.url);
-  try {
+//  try {
     if (req.method === 'OPTIONS') {
       res.writeHead(200, {
         'Access-Control-Allow-Origin': '*'
@@ -150,11 +174,13 @@ server.on('request', function (req, res) {
       });
       res.end();
     } else {
-      dispatch[parts[1]](req, res);
+      dispatch.route(url.pathname, function (fn) {
+        fn(req, res);
+      });
     }
-  } catch (err) {
-    endChain(err, req, res);
-  }
+//  } catch (err) {
+//    endChain(err, req, res);
+//  }
 });
 
 server.listen(conf.serverPort, conf.serverHost);
