@@ -1,31 +1,27 @@
+var reCache = {}
+,route = function (str, handlers, res, fn) {
+  if (typeof res === 'function') {
+    fn = res;
+    res = reCache; 
+  }
+  for (var i in handlers) {
+    if (!res[i]) res[i] = new RegExp(i);
+    var m = res[i].exec(str);
+    if (m) {
+      fn.call(this, handlers[i], m.splice(1));
+    }
+  }
+}
+
 var Dispatch = function (handlers) {
-  this.handlers = {};
+  this.handlers = handlers;
   this.res = {};
-  this.add(handlers);
 }
 Dispatch.prototype = {
-  add: function (handlers) {
-    for (var i in handlers) {
-      this.res[i] = new RegExp(i);
-      this.handlers[i] = handlers[i];
-    }
+  route: function (str, fn) {
+    route(str, this.handlers, this.res, fn);
   }
-  ,route: function (str, fn) {
-    for (var i in this.res) {
-      var m = this.res[i].exec(str);
-      if (m) {
-        var args = m.splice(1);
-        args.push(str);
-        fn((function (handler, args) {
-          return function () {
-            for (var i in arguments) args.push(arguments[i]);
-              handler.apply(this, args);
-            }
-          })(this.handlers[i], args));
-        return true;
-      }
-    }
-    return false;
-  }
-}
+};
+
+exports.route = route;
 exports.Dispatch = Dispatch;

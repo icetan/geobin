@@ -2,7 +2,7 @@ var http = require('http')
 ,parseUrl = require('url').parse
 ,mongodb = require('mongodb')
 ,oauth = require('./oauth')
-,Dispatch = require('./dispatch').Dispatch;
+,route = require('./dispatch').route;
 
 var conf = {
   serverHost: '0.0.0.0'
@@ -51,6 +51,18 @@ var conf = {
 ,parsePathname = function(req) {
   return parseUrl(req.url).pathname.split('/').splice(1);
 }
+,notFound = function (req, res) {
+  console.log('404: '+req.url+' not found.');
+  res.writeHead(404);
+  res.end();
+}
+,options = function (req, res) {
+    res.writeHead(200, {
+      'Access-Control-Allow-Origin': '*'
+      ,'Access-Control-Allow-Headers': 'X-Requested-With'
+    });
+    res.end();
+}
 ,endChain = function (err, req, res, fn) {
   if (err) {
     console.log('Error occured: '+err);
@@ -67,45 +79,44 @@ var conf = {
   if (fn) fn(err, req, res);
 }
 ,jsonChain = function (err, req, res, fn, data) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
   if (data) {
     data = JSON.stringify(data);
     var query = parseUrl(req.url, true).query;
     if (query.jsonp && req.method === 'GET') {
-      res.setHeader('Content-Type', 'application/javascript');
+      res.writeHead(200, {
+        'Access-Control-Allow-Origin': '*'
+        ,'Content-Type': 'application/javascript'
+      });
       data = query.jsonp+'('+data+');';
     } else {
-      res.setHeader('Content-Type', 'application/json');
+      res.writeHead(200, {
+        'Access-Control-Allow-Origin': '*'
+        ,'Content-Type': 'application/json'
+      });
     }
   }
   res.write(data);
   if (fn) fn(err, req, res);
 }
 
-,dispatch = new Dispatch({
-  '^/geo/(.+)$': function (id, pathname, req, res) {
+,handlers = {
+  '^/geo/(.+)$': function (id, req, res) {
     ({
       GET: function () {
         getCollection('location', function (err, collection) {
-          if (parts.length === 2) {
-            console.log('DEBUG: Finding five latest geo\'s inserted');
-            collection.find({}, {sort:['_id','desc'], limit:5}).toArray(function (err, docs) {
-              var list = new Array(docs.length);
-              for (var i = 0; i < docs.length; i++) list[i] = docToGeo(docs[i]); 
-              jsonChain(err, req, res, endChain, list);
-            });
-          } else if (parts.length === 3) {
-            console.log('DEBUG: Finding location ID: '+parts[2]);
-            collection.find({_id:new ObjectID(parts[2])}).nextObject(function (err, doc) {
+          console.log('DEBUG: Finding location ID: '+id);
+          collection.find({_id:new ObjectID(id)}).nextObject(function (err, doc) {
+            if (doc) {
               jsonChain(err, req, res, endChain, docToGeo(doc));
-            });
-          }
+            } else {
+              notFound(req, res);
+            }
+          });
         });
       }
     })[req.method]();
   }
-  ,'^/geo$': function (pathname, req, res) {
-    console.log(pathname+' '+req.method);
+  ,'^/geo$': function (req, res) {
     ({
       GET: function () {
         getCollection('location', function (err, collection) {
@@ -133,13 +144,13 @@ var conf = {
           });
         });
       }
-    })[req.method];
+    })[req.method]();
   }
 
-  ,'^/user/(.+)$': function (user, pathname, req, res) {
+  ,'^/user/(.+)$': function (user, req, res) {
   }
   
-  ,'^/oauth$': function (pathname, req, res) {
+  ,'^/oauth$': function (req, res) {
     ({
       GET: function () {
         var query = parseUrl(req.url, true).query
@@ -161,26 +172,22 @@ var conf = {
       }
     })[req.method]();
   }
-});
+};
 
 server.on('request', function (req, res) {
   var url = parseUrl(req.url);
-  console.log('DEBUG: Incoming '+req.method+' request: '+req.url);
-//  try {
+  console.log(req.method+' '+req.url);
     if (req.method === 'OPTIONS') {
-      res.writeHead(200, {
-        'Access-Control-Allow-Origin': '*'
-        ,'Access-Control-Allow-Headers': 'X-Requested-With'
-      });
-      res.end();
+      options(req, res)
     } else {
-      dispatch.route(url.pathname, function (fn) {
-        fn(req, res);
+      var handled = false;
+      route(url.pathname, handlers, function (handler, args) {
+        handled = true;
+        console.dir(arguments);
+        handler.apply(this, args.concat([req, res]));
       });
+      if (!handled) notFound(req, res);
     }
-//  } catch (err) {
-//    endChain(err, req, res);
-//  }
 });
 
 server.listen(conf.serverPort, conf.serverHost);
