@@ -56,6 +56,11 @@ var conf = {
   res.writeHead(404);
   res.end();
 }
+,badRequest = function (req, res) {
+    console.log('400: '+req.url+' bad request.');
+    res.writeHead(400);
+    res.end();
+  }
 ,options = function (req, res) {
     res.writeHead(200, {
       'Access-Control-Allow-Origin': '*'
@@ -105,13 +110,17 @@ var conf = {
       GET: function () {
         getCollection('location', function (err, collection) {
           console.log('DEBUG: Finding location ID: '+id);
-          collection.find({_id:new ObjectID(id)}).nextObject(function (err, doc) {
-            if (doc) {
-              jsonChain(err, req, res, endChain, docToGeo(doc));
-            } else {
-              notFound(req, res);
-            }
-          });
+          try {
+            collection.find({_id:new ObjectID(id)}).nextObject(function (err, doc) {
+              if (doc) {
+                jsonChain(err, req, res, endChain, docToGeo(doc));
+              } else {
+                notFound(req, res);
+              }
+            });  
+          } catch (err) {
+            badRequest(req, res)
+          }
         });
       }
     })[req.method]();
