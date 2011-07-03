@@ -2,8 +2,8 @@ var http = require('http')
 ,parseUrl = require('url').parse
 ,querystring = require('querystring')
 ,mongodb = require('mongodb')
-,oauth = require('./oauth')
-,dispatch = require('./dispatch');
+,dispatch = require('./dispatch')
+,ServeOAuth2 = require('./oauth2').ServeOAuth2;
 
 var conf = {
   serverHost: '0.0.0.0'
@@ -56,14 +56,19 @@ var conf = {
   res.writeHead(200);
   res.end();
 }
+,badRequest = function (req, res, text) {
+  console.log('400: '+req.url+' bad request.');
+  res.writeHead(400, {'Content-Type': 'text/plain'});
+  res.end(text);
+}
+,unauthorized = function (req, res, text) {
+  console.log('401: '+req.url+' unauthorized.');
+  res.writeHead(401, {'Content-Type': 'text/plain'});
+  res.end(text);
+}
 ,notFound = function (req, res) {
   console.log('404: '+req.url+' not found.');
   res.writeHead(404);
-  res.end();
-}
-,badRequest = function (req, res) {
-  console.log('400: '+req.url+' bad request.');
-  res.writeHead(400);
   res.end();
 }
 ,methodNotAllowed = function (req, res) {
@@ -112,9 +117,11 @@ var conf = {
   res.end(data);
 }
 
+,oauth2 = new ServeOAuth2()
+
 ,handlers = {
   '^/geo/(.+)$': function (id, req, res) {
-    ({
+    method(req, res, {
       GET: function () {
         getCollection('location', function (err, collection) {
           console.log('DEBUG: Finding location ID: '+id);
@@ -131,10 +138,10 @@ var conf = {
           }
         });
       }
-    })[req.method]();
+    });
   }
   ,'^/geo$': function (req, res) {
-    ({
+    method(req, res, {
       GET: function () {
         getCollection('location', function (err, collection) {
           console.log('DEBUG: Finding five latest geo\'s inserted');
@@ -161,57 +168,81 @@ var conf = {
           });
         });
       }
-    })[req.method]();
+    });
   }
 
   ,'^/user/(.+)$': function (user, req, res) {
-  }
-  
-  ,'^/token$': function (req, res) {
-    method({
-      POST: function () {
-        var data = '';
-        req.on('data', function (chunk) { data += chunk; });
-        req.on('end', function() {
-          querystring.parse(data);
-        }
+    method(req, res, {
+      GET: function () {
+        oauth2.authenticate(req, function (err, type, accessToken) {
+          if (err) return badRequest(req, res, err);
+          if (accessToken !== '4cc355Tok3n') {
+            if (type === 'query') {
+              badRequest(req, res, 'Access token not valid.');
+            } else {
+              res.setHeader('WWW-Authenticate', type+' realm="User info"');
+              unauthorized(req, res, 'Access token not valid.');
+            }
+          } else {
+            // Success, user authenticated with a access token!
+            textResponse(req, res, 'Welcome to GeoBin '+user+'!');
+          }
+        });
       }
     });
   }
-//  ,'^/oauth$': function (req, res) {
-//    ({
-//      GET: function () {
-//        var query = parseUrl(req.url, true).query
-//        ,signature = oauth.signature({
-//          httpMethod: req.method
-//          ,url: req.url
-//          ,params: query
-//          ,consumerSecret: 'anonymous'
-//          ,method: quety.oauth_signature_method
-//        });
-//        console.log('DEBUG: OAuth request signature is: ""'+query.oauth_signature
-//          +'", server signature is: "'+signature);
-//        var token = oauth.createRequestToken({
-//          nonce: query.oauth_nonce
-//          ,consumerSecret: 'anonymous'
-//          ,signature: query.oauth_signature
-//        });
-//        console.log('DEBUG: OAuth request token created: '+console.dir(token));
-//      }
-//    })[req.method]();
-//  }
+  
+  ,'^/token$': function (req, res) {
+    var oauth = function () {
+      oauth2.authorize(req, res);
+    }
+    method(req, res, {
+      GET: oauth
+      ,POST: oauth
+    });
+  }
 };
+
+oauth2.on('clientSecret', function(clientId, fn) {
+  if (clientId === 'anonymous')
+    fn(undefined, 'anonymous');
+  else
+    fn('Only support for anonymous clients for now.');
+});
+oauth2.on('authenticateUser', function(username, password, scope, fn) {
+  if (username === 'test' && password === 'test123')
+    fn();
+  else
+    fn('Invalid login');
+});
+oauth2.on('refreshToken', function(clientId, username, fn) {
+  fn(undefined, 'r3fr35hT0k3n');
+});
+oauth2.on('authenticateRefreshToken', function(clientId, username, refreshToken, fn) {
+  if (refreshToken === 'r3fr35hT0k3n') {
+    fn(undefined, 'r3fr35hT0k3n'); // Generate new refresh token if needed.
+  } else {
+    fn('Invalid refresh token.');
+  }
+});
+oauth2.on('accessToken', function(clientId, username, scope, fn) {
+  fn(undefined, '4cc355Tok3n', 3600);
+});
 
 server.on('request', function (req, res) {
   var url = parseUrl(req.url);
   console.log(req.method+' '+req.url);
-  var handled = false;
+  console.dir(req.headers);
+  var handled = 0;
   dispatch.match(url.pathname, handlers, function (handler, args) {
-    handled = true;
-    console.dir(arguments);
-    handler.apply(this, args.concat([req, res]));
+    if (handled++ === 0) {
+      console.dir(arguments);
+      handler.apply(this, args.concat([req, res]));
+    } else {
+      console.log('WARNING: "'+url.pathname+'" matched more than one handler.');
+    }
   });
-  if (!handled) notFound(req, res);
+  if (handled === 0) notFound(req, res);
 });
 
 server.listen(conf.serverPort, conf.serverHost);
