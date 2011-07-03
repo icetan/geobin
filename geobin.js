@@ -1,8 +1,9 @@
 var http = require('http')
 ,parseUrl = require('url').parse
+,querystring = require('querystring')
 ,mongodb = require('mongodb')
 ,oauth = require('./oauth')
-,route = require('./dispatch').route;
+,dispatch = require('./dispatch');
 
 var conf = {
   serverHost: '0.0.0.0'
@@ -51,39 +52,47 @@ var conf = {
 ,parsePathname = function(req) {
   return parseUrl(req.url).pathname.split('/').splice(1);
 }
+,ok = function (req, res) {
+  res.writeHead(200);
+  res.end();
+}
 ,notFound = function (req, res) {
   console.log('404: '+req.url+' not found.');
   res.writeHead(404);
   res.end();
 }
 ,badRequest = function (req, res) {
-    console.log('400: '+req.url+' bad request.');
-    res.writeHead(400);
-    res.end();
-  }
-,options = function (req, res) {
-    res.writeHead(200, {
-      'Access-Control-Allow-Origin': '*'
-      ,'Access-Control-Allow-Headers': 'X-Requested-With'
-    });
-    res.end();
-}
-,endChain = function (err, req, res, fn) {
-  if (err) {
-    console.log('Error occured: '+err);
-    res.writeHead(500);
-    res.end();
-    return;
-  }
+  console.log('400: '+req.url+' bad request.');
+  res.writeHead(400);
   res.end();
-  if (fn) fn(err, req, res);
 }
-,textChain = function (err, req, res, fn, data) {
-  res.setHeader('Content-Type', 'text/plain');
-  res.write(data);
-  if (fn) fn(err, req, res);
+,methodNotAllowed = function (req, res) {
+  console.log('405: '+req.method+' '+req.url+' method not allowed.');
+  res.writeHead(405);
+  res.end();
 }
-,jsonChain = function (err, req, res, fn, data) {
+,method = function (req, res, handlers) {
+  if (!handlers['OPTIONS']) {
+    handlers['OPTIONS'] = function () {
+      res.writeHead(200, {
+        'Access-Control-Allow-Origin': '*'
+        ,'Access-Control-Allow-Headers': 'X-Requested-With'
+      });
+      res.end();
+    };
+  }
+  dispatch.route(req.method, handlers, function () {
+    methodNotAllowed(req, res);
+  });
+}
+,textResponse = function (req, res, data) {
+  res.writeHead(200, {
+    'Access-Control-Allow-Origin': '*'
+    ,'Content-Type': 'text/plain'
+  });
+  res.end(data);
+}
+,jsonResponse = function (req, res, data) {
   if (data) {
     data = JSON.stringify(data);
     var query = parseUrl(req.url, true).query;
@@ -100,8 +109,7 @@ var conf = {
       });
     }
   }
-  res.write(data);
-  if (fn) fn(err, req, res);
+  res.end(data);
 }
 
 ,handlers = {
@@ -113,13 +121,13 @@ var conf = {
           try {
             collection.find({_id:new ObjectID(id)}).nextObject(function (err, doc) {
               if (doc) {
-                jsonChain(err, req, res, endChain, docToGeo(doc));
+                jsonResponse(req, res, docToGeo(doc));
               } else {
                 notFound(req, res);
               }
             });  
           } catch (err) {
-            badRequest(req, res)
+            badRequest(req, res);
           }
         });
       }
@@ -133,7 +141,7 @@ var conf = {
           collection.find({}, {sort:['_id','desc'], limit:5}).toArray(function (err, docs) {
             var list = new Array(docs.length);
             for (var i = 0; i < docs.length; i++) list[i] = docToGeo(docs[i]); 
-            jsonChain(err, req, res, endChain, list);
+            jsonResponse(req, res, list);
           });
         });
       }
@@ -148,7 +156,7 @@ var conf = {
           console.dir(doc);
           getCollection('location', function (err, collection) {
             collection.insert(doc, function (err, docs) {
-              jsonChain(err, req, res, endChain, docToGeo(docs[0]));
+              jsonResponse(req, res, docToGeo(docs[0]));
             });
           });
         });
@@ -159,44 +167,51 @@ var conf = {
   ,'^/user/(.+)$': function (user, req, res) {
   }
   
-  ,'^/oauth$': function (req, res) {
-    ({
-      GET: function () {
-        var query = parseUrl(req.url, true).query
-        ,signature = oauth.signature({
-          httpMethod: req.method
-          ,url: req.url
-          ,params: query
-          ,consumerSecret: 'anonymous'
-          ,method: quety.oauth_signature_method
-        });
-        console.log('DEBUG: OAuth request signature is: ""'+query.oauth_signature
-          +'", server signature is: "'+signature);
-        var token = oauth.createRequestToken({
-          nonce: query.oauth_nonce
-          ,consumerSecret: 'anonymous'
-          ,signature: query.oauth_signature
-        });
-        console.log('DEBUG: OAuth request token created: '+console.dir(token));
+  ,'^/token$': function (req, res) {
+    method({
+      POST: function () {
+        var data = '';
+        req.on('data', function (chunk) { data += chunk; });
+        req.on('end', function() {
+          querystring.parse(data);
+        }
       }
-    })[req.method]();
+    });
   }
+//  ,'^/oauth$': function (req, res) {
+//    ({
+//      GET: function () {
+//        var query = parseUrl(req.url, true).query
+//        ,signature = oauth.signature({
+//          httpMethod: req.method
+//          ,url: req.url
+//          ,params: query
+//          ,consumerSecret: 'anonymous'
+//          ,method: quety.oauth_signature_method
+//        });
+//        console.log('DEBUG: OAuth request signature is: ""'+query.oauth_signature
+//          +'", server signature is: "'+signature);
+//        var token = oauth.createRequestToken({
+//          nonce: query.oauth_nonce
+//          ,consumerSecret: 'anonymous'
+//          ,signature: query.oauth_signature
+//        });
+//        console.log('DEBUG: OAuth request token created: '+console.dir(token));
+//      }
+//    })[req.method]();
+//  }
 };
 
 server.on('request', function (req, res) {
   var url = parseUrl(req.url);
   console.log(req.method+' '+req.url);
-    if (req.method === 'OPTIONS') {
-      options(req, res)
-    } else {
-      var handled = false;
-      route(url.pathname, handlers, function (handler, args) {
-        handled = true;
-        console.dir(arguments);
-        handler.apply(this, args.concat([req, res]));
-      });
-      if (!handled) notFound(req, res);
-    }
+  var handled = false;
+  dispatch.match(url.pathname, handlers, function (handler, args) {
+    handled = true;
+    console.dir(arguments);
+    handler.apply(this, args.concat([req, res]));
+  });
+  if (!handled) notFound(req, res);
 });
 
 server.listen(conf.serverPort, conf.serverHost);
