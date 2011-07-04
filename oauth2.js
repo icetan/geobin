@@ -1,6 +1,4 @@
 var url = require('url')
-,crypto = require('crypto')
-,url = require('url')
 ,querystring = require('querystring')
 ,dispatch = require('./dispatch')
 ,EventEmitter = require('events').EventEmitter;
@@ -16,8 +14,8 @@ ServeOAuth2.prototype = new EventEmitter;
 
 ServeOAuth2.prototype._response = function (data, req, res) {
   var headers = {
-    'Access-Control-Allow-Origin': '*'
-    ,'Content-Type': 'application/json'
+    //'Access-Control-Allow-Origin': '*'
+    'Content-Type': 'application/json'
     ,'Cache-Control': 'no-store'
   };
   for (var key in data.headers) {
@@ -44,10 +42,10 @@ ServeOAuth2.prototype._getClientSecret = function (clientId, fn) {
   });
 };
 
-ServeOAuth2.prototype._getAccessToken = function (params, fn) {
+ServeOAuth2.prototype._getAccessToken = function (params, credentials, fn) {
   this.emit('accessToken'
   ,params.client_id
-  ,params.username
+  ,credentials
   ,params.scope
   ,function (err, accessToken, expiration) {
     if (err) {
@@ -133,6 +131,8 @@ ServeOAuth2.prototype.authenticateClient = function (headers, params, fn) {
 };
 
 ServeOAuth2.prototype.serveAccessToken = function (params, fn) {
+  console.log('DEBUG: ServeOAuth2 is serving a access token:');
+  console.dir(params);
   var self = this;
   dispatch.route(params.grant_type, {
     'password': function () {
@@ -140,7 +140,7 @@ ServeOAuth2.prototype.serveAccessToken = function (params, fn) {
       ,params.username
       ,params.password
       ,params.scope
-      ,function (err) {
+      ,function (err, credentials) {
         if (err) {
           return fn({
             statusCode: 400
@@ -152,7 +152,7 @@ ServeOAuth2.prototype.serveAccessToken = function (params, fn) {
         }
         self.emit('refreshToken'
         ,params.client_id
-        ,params.username
+        ,credentials
         ,function (err, refreshToken) {
           if (err) {
             return fn({
@@ -163,7 +163,7 @@ ServeOAuth2.prototype.serveAccessToken = function (params, fn) {
               }
             });
           }
-          self._getAccessToken(params, function (data) {
+          self._getAccessToken(params, credentials, function (data) {
             if (data.statusCode === 200) data.response['refresh_token'] = refreshToken;
             fn(data);
           });
@@ -173,9 +173,8 @@ ServeOAuth2.prototype.serveAccessToken = function (params, fn) {
     ,'refresh_token': function () {
       self.emit('authenticateRefreshToken'
       ,params.client_id
-      ,params.username
       ,params.refresh_token
-      ,function (err, refreshToken) {
+      ,function (err, credentials, refreshToken) {
         if (err) {
           return fn({
             statusCode: 400
@@ -185,7 +184,7 @@ ServeOAuth2.prototype.serveAccessToken = function (params, fn) {
             }
           });
         }  
-        self._getAccessToken(params, function (data) {
+        self._getAccessToken(params, credentials, function (data) {
           if (data.statusCode === 200) data.response['refresh_token'] = refreshToken;
           fn(data);
         });
@@ -240,7 +239,7 @@ ServeOAuth2.prototype.authorize = function (req, res) {
       self.authenticateClient(req.headers
       ,params
       ,function (err) {
-        if (err) return fn(err);
+        if (err) return respond(err);
         self.serveAccessToken(params, respond);
       });
     }
