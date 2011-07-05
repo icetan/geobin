@@ -22,31 +22,36 @@ var conf = {
   return crypto.createHash('sha1', conf.passwordKey)
   .update(password).update(conf.passwordSalt).digest('base64');
 }
-,generateRandomBuffer = function (length) {
-  var buf = new Buffer(length);
-  for (var i = 0; i < length; i++) {
+,randomBin = function (length, pre, post) {
+  pre = pre || '';
+  post = post || '';
+  var buf = new Buffer(length+pre.length+post.length)
+  ,i = pre.length;
+  buf.write(pre);
+  for (;i < length; i++) {
     buf[i] = Math.round(Math.random()*255);
   }
+  buf.write(post, i);
   return buf;
 }
-,encodeBase64Url = function (str) {
-  return new Buffer(str).toString('base64')
-  .replace(/=+$/, '').replace(/\//g, '_').replace(/\+/g, '-');
+,encodeBase64Url = function (buf) {
+  return buf.toString('base64').replace(/=+$/, '').replace(/\//g, '_').replace(/\+/g, '-');
 }
 ,decodeBase64Url = function (str) {
-  return new Buffer(str.replace(/_/g, '/').replace(/-/g, '+'), 'base64').toString();
+  return new Buffer(str.replace(/_/g, '/').replace(/-/g, '+'), 'base64');
 }
 ,generateRefreshToken = function () {
-    return '1/'+encodeBase64Url(generateRandomBuffer(32));
+    return encodeBase64Url(randomBin(32, '1/'));
 }
 ,generateAccessToken = function () {
-    return '1/'+encodeBase64Url(generateRandomBuffer(16));
+    return encodeBase64Url(randomBin(16, '1/'));
 }
 
 ,db = new mongodb.Db(conf.dbName
   ,new mongodb.Server(conf.dbHost, conf.dbPort)
   ,{native_parser: true})
-,ObjectID = db.bson_serializer.ObjectID  
+,ObjectID = db.bson_serializer.ObjectID
+,Binary = db.bson_serializer.Binary
 ,getCollection = function (name, fn) {
   if (db.state === 'notConnected') {
     db.open(function (err, p_client) {
@@ -152,12 +157,12 @@ var conf = {
 ,oauthResource = function (req, res, username, scope, fn) {
   oauth2.authenticate(req, function (err, type, accessToken) {
     if (err) return badRequest(req, res, err);
-    getCollection('token', function (err, collection) {
+    getCollection('access_token', function (err, collection) {
       if (err) return internalError(req, res, 'Persistance error.');
       var query = {
         username: username
-        ,'access.token': accessToken
-        ,'access.expires': {$gt:new Date()}
+        ,token: accessToken
+        ,expires: {$gt:new Date()}
       };
       collection.find(query).nextObject(function (err, doc) {
         if (err) return internalError(req, res, 'Persistance error.');
@@ -230,11 +235,11 @@ var conf = {
       }
     });
   }
-  ,'^/user/(.+)/geo$': function (user, req, res) {
+  ,'^/user/(.+)/geo$': function (username, req, res) {
     method(req, res, {
       POST: function () {
-        oauthResource(req, res, user, 'userInfo', function () {
-          textResponse(req, res, 'Welcome to GeoBin '+user+'!');
+        oauthResource(req, res, username, 'userInfo', function () {
+          textResponse(req, res, 'Welcome to GeoBin '+username+'!');
         });
       }
     });
@@ -271,11 +276,11 @@ oauth2.on('authenticateUser', function (username, password, scope, fn) {
 });
 oauth2.on('refreshToken', function (clientId, credentials, fn) {
   console.log('DEBUG: Getting refresh token.');
-  getCollection('token', function (err, collection) {
+  getCollection('refresh_token', function (err, collection) {
     if (err) return fn('Persistance error.');
     var refreshToken = generateRefreshToken()
     ,query = {client:clientId, username:credentials.username}
-    ,update = {$set:{refresh:{token:refreshToken}}};
+    ,update = {$set:{token:refreshToken}};
     console.log('DEBUG: Generated refresh token: '+refreshToken);
     collection.update(query, update, {upsert:true, safe:true}, function (err) {
       if (err) return fn('Couldn\t persist refresh token.');
@@ -285,9 +290,9 @@ oauth2.on('refreshToken', function (clientId, credentials, fn) {
   });
 });
 oauth2.on('authenticateRefreshToken', function (clientId, refreshToken, fn) {
-  getCollection('token', function (err, collection) {
+  getCollection('refresh_token', function (err, collection) {
     if (err) return fn('Persistance error.');
-    var query = {client:clientId, refresh:{token:refreshToken}};
+    var query = {client:clientId, token:refreshToken};
     collection.find(query).nextObject(function (err, doc) {
       if (err) return fn('Persistance error when retrieving refresh token.');
       if (!doc) return fn('Refresh token not valid.');
@@ -295,13 +300,13 @@ oauth2.on('authenticateRefreshToken', function (clientId, refreshToken, fn) {
     });
   });
 });
-oauth2.on('accessToken', function (clientId, credentials, scope, fn) {
-  getCollection('token', function (err, collection) {
+oauth2.on('accessToken', function (clientId, credentials, fn) {
+  getCollection('access_token', function (err, collection) {
     if (err) return fn('Persistance error.');
     var accessToken = generateAccessToken()
-    ,expiresIn = 3600000 // One hour from now.
+    ,expiresIn = 3600000 // One hour.
     ,query = {client:clientId, username:credentials.username}
-    ,update = {$set:{access:{token:accessToken, expires:new Date(Date.now()+expiresIn)}}};
+    ,update = {$set:{token:accessToken, expires:new Date(Date.now()+expiresIn)}};
     collection.update(query, update, {upsert:true, safe:true}, function (err) {
       if (err) return fn('Couldn\t persist access token.');
       fn(undefined, accessToken, expiresIn);

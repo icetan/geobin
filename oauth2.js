@@ -46,7 +46,6 @@ ServeOAuth2.prototype._getAccessToken = function (params, credentials, fn) {
   this.emit('accessToken'
   ,params.client_id
   ,credentials
-  ,params.scope
   ,function (err, accessToken, expiration) {
     if (err) {
       return fn({
