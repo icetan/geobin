@@ -164,6 +164,8 @@ var conf = {
         ,token: accessToken
         ,expires: {$gt:new Date()}
       };
+      console.log('DEBUG: Authentication access to resource "'+scope+'":');
+      console.dir(query);
       collection.find(query).nextObject(function (err, doc) {
         if (err) return internalError(req, res, 'Persistance error.');
         if (!doc) {
@@ -178,7 +180,7 @@ var conf = {
 }
 
 ,handlers = {
-  '^/geo/(.+)$': function (id, req, res) {
+  '^/geo/([^/]+)$': function (id, req, res) {
     method(req, res, {
       GET: function () {
         getCollection('location', function (err, collection) {
@@ -226,20 +228,47 @@ var conf = {
     });
   }
 
-  ,'^/user/(.+)$': function (user, req, res) {
+  ,'^/user/([^/]+)$': function (username, req, res) {
     method(req, res, {
       GET: function () {
-        oauthResource(req, res, user, 'userInfo', function () {
-          textResponse(req, res, 'Welcome to GeoBin '+user+'!');
+        oauthResource(req, res, username, 'userInfo', function () {
+          textResponse(req, res, 'Welcome to GeoBin '+username+'!');
         });
       }
     });
   }
-  ,'^/user/(.+)/geo$': function (username, req, res) {
+  ,'^/user/([^/]+)/geo$': function (username, req, res) {
     method(req, res, {
-      POST: function () {
-        oauthResource(req, res, username, 'userInfo', function () {
-          textResponse(req, res, 'Welcome to GeoBin '+username+'!');
+      GET: function () {
+        oauthResource(req, res, username, 'getGeo', function () {
+          getCollection('location', function (err, collection) {
+            console.log('DEBUG: Finding five latest geo\'s inserted for user '+username);
+            collection.find({username:username}
+            ,{sort:['_id','desc'], limit:5}).toArray(function (err, docs) {
+              var list = new Array(docs.length);
+              for (var i = 0; i < docs.length; i++) list[i] = docToGeo(docs[i]); 
+              jsonResponse(req, res, list);
+            });
+          });
+        });
+      }
+      ,POST: function () {
+        oauthResource(req, res, username, 'postGeo', function () {
+          var data = '';
+          req.on('data', function (chunk) { data += chunk; });
+          req.on('end', function() {
+            console.log('DEBUG: Data from POST recived: '+data);
+            var doc = geoToDoc(JSON.parse(data));
+            doc.date = new Date();
+            doc.username = username;
+            console.log('DEBUG: Inserting geo into database for '+username+':');
+            console.dir(doc);
+            getCollection('location', function (err, collection) {
+              collection.insert(doc, function (err, docs) {
+                jsonResponse(req, res, docToGeo(docs[0]));
+              });
+            });
+          });
         });
       }
     });
