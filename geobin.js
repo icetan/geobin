@@ -1,117 +1,15 @@
 var http = require('http')
 ,parseUrl = require('url').parse
-,querystring = require('querystring')
-,crypto = require('crypto')
-,mongodb = require('mongodb')
+,util = require('./util')
+,controller = require('./controller')
 ,dispatch = require('./dispatch')
-,ServeOAuth2 = require('./oauth2').ServeOAuth2;
+,conf = require('./config');
 
-var conf = {
-  serverHost: '0.0.0.0'
-  ,serverPort: 8124
-  ,dbHost: '127.0.0.1'
-  ,dbPort: 27017
-  ,dbName: 'test'
-  ,passwordKey: '7h3p4P1&m4Mi!'
-  ,passwordSalt: '?fU7ur3_N4rw411z+'
-  ,tokenKey: 'hFR<8~0zhNW,jx"\''
-  ,tokenSalt: 'k!eW|b2tHC]TZI4\\'
-}
+// If an argument is given in the command line, override server port.
+if (process.argv[2])
+  conf.serverPort = parseInt(process.argv[2]);
 
-,hashPassword = function (password) {
-  return crypto.createHash('sha1', conf.passwordKey)
-  .update(password).update(conf.passwordSalt).digest('base64');
-}
-,randomBin = function (length, pre, post) {
-  pre = pre || '';
-  post = post || '';
-  var buf = new Buffer(length+pre.length+post.length)
-  ,i = pre.length;
-  buf.write(pre);
-  for (;i < length; i++) {
-    buf[i] = Math.round(Math.random()*255);
-  }
-  buf.write(post, i);
-  return buf;
-}
-,encodeBase64Url = function (buf) {
-  return buf.toString('base64').replace(/=+$/, '').replace(/\//g, '_').replace(/\+/g, '-');
-}
-,decodeBase64Url = function (str) {
-  return new Buffer(str.replace(/_/g, '/').replace(/-/g, '+'), 'base64');
-}
-,generateRefreshToken = function () {
-    return encodeBase64Url(randomBin(32, '1/'));
-}
-,generateAccessToken = function () {
-    return encodeBase64Url(randomBin(16, '1/'));
-}
-
-,db = new mongodb.Db(conf.dbName
-  ,new mongodb.Server(conf.dbHost, conf.dbPort)
-  ,{native_parser: true})
-,ObjectID = db.bson_serializer.ObjectID
-,Binary = db.bson_serializer.Binary
-,getCollection = function (name, fn) {
-  if (db.state === 'notConnected') {
-    db.open(function (err, p_client) {
-      db.collection(name, fn);
-    });
-  } else {
-    db.collection(name, fn);
-  }
-}
-
-,geoToDoc = function (geo) {
-  if (typeof geo.category !== 'string') throw 'geo.category must be a string';
-  if (typeof geo.msg !== 'string') throw 'geo.msg must be a string';
-  return {
-    loc: [geo.lon, geo.lat]
-    ,category: geo.category
-    ,data: {msg: geo.msg}
-  };
-}
-,docToGeo = function (doc) {
-  return {
-    id: doc._id
-    ,lon: doc.loc[0]
-    ,lat: doc.loc[1]
-    ,msg: doc.data.msg
-    ,category: doc.category
-    ,date: parseInt(doc.date)
-  };
-}
-
-,server = http.createServer()
-,ok = function (req, res) {
-  res.writeHead(200);
-  res.end();
-}
-,badRequest = function (req, res, text) {
-  console.log('400: '+req.url+' bad request.');
-  res.writeHead(400, {'Content-Type': 'text/plain'});
-  res.end(text);
-}
-,unauthorized = function (req, res, text) {
-  console.log('401: '+req.url+' unauthorized.');
-  res.writeHead(401, {'Content-Type': 'text/plain'});
-  res.end(text);
-}
-,notFound = function (req, res) {
-  console.log('404: '+req.url+' not found.');
-  res.writeHead(404);
-  res.end();
-}
-,methodNotAllowed = function (req, res) {
-  console.log('405: '+req.method+' '+req.url+' method not allowed.');
-  res.writeHead(405);
-  res.end();
-}
-,internalError = function (req, res, err) {
-  console.log('500: '+req.method+' '+req.url+' internal server error: "'+err+'"');
-  res.writeHead(500);
-  res.end();
-}
+var server = http.createServer()
 ,method = function (req, res, handlers) {
 //  if (!handlers['OPTIONS']) {
 //    handlers['OPTIONS'] = function () {
@@ -123,107 +21,26 @@ var conf = {
 //    };
 //  }
   dispatch.route(req.method, handlers, function () {
-    methodNotAllowed(req, res);
+    controller.methodNotAllowed(req, res);
   });
-}
-,textResponse = function (req, res, data) {
-  res.writeHead(200, {
-    //'Access-Control-Allow-Origin': '*'
-    'Content-Type': 'text/plain'
-  });
-  res.end(data);
-}
-,jsonResponse = function (req, res, data) {
-  if (data) {
-    data = JSON.stringify(data);
-    var query = parseUrl(req.url, true).query;
-    if (query.jsonp && req.method === 'GET') {
-      res.writeHead(200, {
-        //'Access-Control-Allow-Origin': '*'
-        'Content-Type': 'application/javascript'
-      });
-      data = query.jsonp+'('+data+');';
-    } else {
-      res.writeHead(200, {
-        //'Access-Control-Allow-Origin': '*'
-        'Content-Type': 'application/json'
-      });
-    }
-  }
-  res.end(data);
 }
 
-,oauth2 = new ServeOAuth2()
-,oauthResource = function (req, res, username, scope, fn) {
-  oauth2.authenticate(req, function (err, type, accessToken) {
-    if (err) return badRequest(req, res, err);
-    getCollection('access_token', function (err, collection) {
-      if (err) return internalError(req, res, 'Persistance error.');
-      var query = {
-        username: username
-        ,token: accessToken
-        ,expires: {$gt:new Date()}
-      };
-      console.log('DEBUG: Authentication access to resource "'+scope+'":');
-      console.dir(query);
-      collection.find(query).nextObject(function (err, doc) {
-        if (err) return internalError(req, res, 'Persistance error.');
-        if (!doc) {
-          if (type === 'query') type = 'Bearer';
-          res.setHeader('WWW-Authenticate', type+' scope="'+scope+'"');
-          return unauthorized(req, res, 'Access token not valid.');
-        }
-        fn(); // User has a valid access token, success!
-      });
-    });
-  });
-}
 
 ,handlers = {
   '^/geo/([^/]+)$': function (id, req, res) {
     method(req, res, {
       GET: function () {
-        getCollection('location', function (err, collection) {
-          console.log('DEBUG: Finding location ID: '+id);
-          collection.find({_id:new ObjectID(id)}).nextObject(function (err, doc) {
-            if (err) badRequest(req, res);
-            if (doc) {
-              jsonResponse(req, res, docToGeo(doc));
-            } else {
-              notFound(req, res);
-            }
-          });  
-        });
+        controller.getAnonymousGeo(req, res, id);
       }
     });
   }
   ,'^/geo$': function (req, res) {
     method(req, res, {
       GET: function () {
-        getCollection('location', function (err, collection) {
-          console.log('DEBUG: Finding five latest geo\'s inserted');
-          collection.find({}, {sort:['_id','desc'], limit:5}).toArray(function (err, docs) {
-            var list = new Array(docs.length);
-            for (var i = 0; i < docs.length; i++) list[i] = docToGeo(docs[i]); 
-            jsonResponse(req, res, list);
-          });
-        });
+        controller.listAnonymousGeo(req, res);
       }
       ,POST: function () {
-        var data = '';
-        req.on('data', function (chunk) { data += chunk; });
-        req.on('end', function() {
-          console.log('DEBUG: Data from POST recived: '+data);
-          var doc = geoToDoc(JSON.parse(data));
-          doc.date = new Date();
-          console.log('DEBUG: Inserting into database:');
-          console.dir(doc);
-          getCollection('location', function (err, collection) {
-            collection.insert(doc, function (err, docs) {
-              jsonResponse(req, res, docToGeo(docs[0]));
-            });
-          });
-        });
+        controller.saveAnonymousGeo(req, res);
       }
     });
   }
@@ -231,52 +48,24 @@ var conf = {
   ,'^/user/([^/]+)$': function (username, req, res) {
     method(req, res, {
       GET: function () {
-        oauthResource(req, res, username, 'userInfo', function () {
-          textResponse(req, res, 'Welcome to GeoBin '+username+'!');
-        });
+        controller.getUser(req, res, username);
       }
     });
   }
   ,'^/user/([^/]+)/geo$': function (username, req, res) {
     method(req, res, {
       GET: function () {
-        oauthResource(req, res, username, 'getGeo', function () {
-          getCollection('location', function (err, collection) {
-            console.log('DEBUG: Finding five latest geo\'s inserted for user '+username);
-            collection.find({username:username}
-            ,{sort:['_id','desc'], limit:5}).toArray(function (err, docs) {
-              var list = new Array(docs.length);
-              for (var i = 0; i < docs.length; i++) list[i] = docToGeo(docs[i]); 
-              jsonResponse(req, res, list);
-            });
-          });
-        });
+        controller.listGeo(req, res, username);
       }
       ,POST: function () {
-        oauthResource(req, res, username, 'postGeo', function () {
-          var data = '';
-          req.on('data', function (chunk) { data += chunk; });
-          req.on('end', function() {
-            console.log('DEBUG: Data from POST recived: '+data);
-            var doc = geoToDoc(JSON.parse(data));
-            doc.date = new Date();
-            doc.username = username;
-            console.log('DEBUG: Inserting geo into database for '+username+':');
-            console.dir(doc);
-            getCollection('location', function (err, collection) {
-              collection.insert(doc, function (err, docs) {
-                jsonResponse(req, res, docToGeo(docs[0]));
-              });
-            });
-          });
-        });
+        controller.saveGeo(req, res, username);
       }
     });
   }
   
   ,'^/token$': function (req, res) {
     var oauth = function () {
-      oauth2.authorize(req, res);
+      controller.getToken(req, res);
     }
     method(req, res, {
       GET: oauth
@@ -285,78 +74,26 @@ var conf = {
   }
 };
 
-oauth2.on('clientSecret', function (clientId, fn) {
-  if (clientId === 'anonymous')
-    fn(undefined, 'anonymous');
-  else
-    fn('Only support for anonymous clients for now.');
-});
-oauth2.on('authenticateUser', function (username, password, scope, fn) {
-  getCollection('user', function (err, collection) {
-    if (err) return fn('Persistance error.');
-    var hash = hashPassword(password)
-    ,query = {username:username, password:hash};
-    collection.find(query).nextObject(function (err, doc) {
-      if (err) return fn('Persistance error.');
-      if (!doc) return fn('Invalid login.');
-      fn(undefined, doc);
-    });
-  });
-});
-oauth2.on('refreshToken', function (clientId, credentials, fn) {
-  console.log('DEBUG: Getting refresh token.');
-  getCollection('refresh_token', function (err, collection) {
-    if (err) return fn('Persistance error.');
-    var refreshToken = generateRefreshToken()
-    ,query = {client:clientId, username:credentials.username}
-    ,update = {$set:{token:refreshToken}};
-    console.log('DEBUG: Generated refresh token: '+refreshToken);
-    collection.update(query, update, {upsert:true, safe:true}, function (err) {
-      if (err) return fn('Couldn\t persist refresh token.');
-      console.log('DEBUG: Saved refresh token.');
-      fn(undefined, refreshToken);
-    });
-  });
-});
-oauth2.on('authenticateRefreshToken', function (clientId, refreshToken, fn) {
-  getCollection('refresh_token', function (err, collection) {
-    if (err) return fn('Persistance error.');
-    var query = {client:clientId, token:refreshToken};
-    collection.find(query).nextObject(function (err, doc) {
-      if (err) return fn('Persistance error when retrieving refresh token.');
-      if (!doc) return fn('Refresh token not valid.');
-      fn(undefined, {username:doc.username});
-    });
-  });
-});
-oauth2.on('accessToken', function (clientId, credentials, fn) {
-  getCollection('access_token', function (err, collection) {
-    if (err) return fn('Persistance error.');
-    var accessToken = generateAccessToken()
-    ,expiresIn = 3600000 // One hour.
-    ,query = {client:clientId, username:credentials.username}
-    ,update = {$set:{token:accessToken, expires:new Date(Date.now()+expiresIn)}};
-    collection.update(query, update, {upsert:true, safe:true}, function (err) {
-      if (err) return fn('Couldn\t persist access token.');
-      fn(undefined, accessToken, expiresIn);
-    });
-  });
-});
 
+var rootPath = conf.serverRootPath || ''; // Just easier to use.
 server.on('request', function (req, res) {
-  var url = parseUrl(req.url);
+  var url = parseUrl(req.url)
+  ,handlePath = (url.pathname.substr(0, rootPath.length) === rootPath)
+  ,handled = 0;
   console.log(req.method+' '+req.url);
   console.dir(req.headers);
-  var handled = 0;
-  dispatch.match(url.pathname, handlers, function (handler, args) {
-    if (handled++ === 0) {
-      console.dir(arguments);
-      handler.apply(this, args.concat([req, res]));
-    } else {
-      console.log('WARNING: "'+url.pathname+'" matched more than one handler.');
-    }
-  });
-  if (handled === 0) notFound(req, res);
+  if (handlePath) {
+    var path = url.pathname.substr(rootPath.length);
+    dispatch.match(path, handlers, function (handler, args) {
+      if (handled++ === 0) {
+        console.dir(arguments);
+        handler.apply(this, args.concat([req, res]));
+      } else {
+        console.log('WARNING: "'+url.pathname+'" matched more than one handler.');
+      }
+    });
+  }
+  if (handled === 0) controller.notFound(req, res);
 });
 
 server.listen(conf.serverPort, conf.serverHost);
