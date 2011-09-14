@@ -1,0 +1,53 @@
+<!doctype html>
+<!--[if lt IE 7 ]> <html class="no-js ie6" lang="en"> <![endif]-->
+<!--[if IE 7 ]>    <html class="no-js ie7" lang="en"> <![endif]-->
+<!--[if IE 8 ]>    <html class="no-js ie8" lang="en"> <![endif]-->
+<!--[if (gte IE 9)|!(IE)]><!--> <html class="no-js" lang="en"> <!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1">
+
+  <title>GeoBin Test Client</title>
+  <meta name="description" content="Geolocation logger">
+  <meta name="author" content="icetan">
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="shortcut icon" href="/favicon.ico">
+
+  <link rel="stylesheet" href="css/style.css?v=1">
+  <link rel="stylesheet" media="handheld" href="css/handheld.css?v=1">
+  <script src="js/libs/modernizr-1.7.min.js"></script>
+</head>
+
+<body>
+  <div id="container">
+    <div id="content"> 
+      <div class="not-supported-msg">
+        Your browser does not support the Geolocation API.
+      </div>
+      <div class="big-button">
+        <a class="send-position" href="#">Send Position</a>
+      </div>
+    </div>
+  </div>
+  <!-- eo #container -->
+  <div id="footer">
+  </div>
+
+  <script src="//ajax.googleapis.com/ajax/libs/jquery/1.5.1/jquery.min.js"></script>
+  <script>window.jQuery || document.write("<script src='js/libs/jquery-1.5.1.min.js'>\x3C/script>")</script>
+
+  <!-- scripts -->
+  <script src="js/libs/json2.min.js"></script>
+  <script src="js/script.js"></script>
+  <!-- end scripts -->
+
+  <script>
+    var _gaq=[["_setAccount","UA-23539622-1"],["_trackPageview"]];
+    (function(d,t){var g=d.createElement(t),s=d.getElementsByTagName(t)[0];g.async=1;
+    g.src=("https:"==location.protocol?"//ssl":"//www")+".google-analytics.com/ga.js";
+    s.parentNode.insertBefore(g,s)}(document,"script"));
+  </script>
+
+</body>
+</html>
