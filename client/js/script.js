@@ -11,12 +11,23 @@
         ,dataType: 'json'
         ,url: 'http://localhost:8124/geo'
         ,data: JSON.stringify({
-          lon: position.coords.longitude
-          ,lat: position.coords.latitude
-          ,msg: 'Hej hej från webben.'
+          geometry: {
+            type: 'Point'
+            ,coordinates: [position.coords.longitude, position.coords.latitude]
+          }
+          ,properties: {
+            meta: {
+              tag:['lol','rofl']
+              ,text: 'Hej hej från webben.'
+            }
+          }
         })
-        ,success: function () {}
-        ,error: function () {}
+        ,success: function () {
+          alert("Success!");
+        }
+        ,error: function (xhr) {
+          alert('Server error: '+xhr.message);
+        }
       });
     });
   });

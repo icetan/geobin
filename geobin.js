@@ -1,6 +1,5 @@
 var http = require('http')
 ,parseUrl = require('url').parse
-,util = require('./lib/util')
 ,controller = require('./lib/controller')
 ,dispatch = require('./lib/dispatch')
 ,conf = require('./lib/config');
@@ -32,6 +31,9 @@ server.on('request', function (req, res) {
         }
         ,POST: function () {
           controller.saveAnonymousGeo(req, res);
+        }
+        ,OPTIONS: function () {
+            controller.okCors(req, res);
         }
       }
 
