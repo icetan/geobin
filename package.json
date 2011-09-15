@@ -1,0 +1,24 @@
+{
+  "name": "geobin"
+  ,"version": "0.0.1"
+  ,"description": "A server for storing locations through a REST API."
+  ,"author": "Christopher Fredén <c.freden@gmail.com>"
+  ,"repository": {
+    "type": "git"
+    ,"url": "https://github.com/icetan/geobin.git"
+  }
+  ,"config": {
+    "mongodb": "native"
+  }
+  ,"dependencies": {
+    "mongodb": "0.9.x"
+    ,"underscore": "1.1.x"
+  }
+  ,"devDependencies": {
+    "vows": "0.5.x"
+  }
+  ,"engines": {
+    "node": ">=0.4.9"
+  }
+  ,"files": ["server.js", "lib/"]
+}
