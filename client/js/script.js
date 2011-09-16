@@ -26,7 +26,7 @@
           alert("Success!");
         }
         ,error: function (xhr) {
-          alert('Server error: '+xhr.message);
+          alert('Server error: '+xhr.statusText);
         }
       });
     });

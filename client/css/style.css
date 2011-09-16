@@ -105,8 +105,19 @@ p, hr {
   display: none;
 }
 
-.geolocation .big-button {
+.geolocation a.big-button {
   display: block;
+  border-radius: 5px;
+  border: solid 2px #416C96;
+  background-color: #568EC7;
+  padding: 15px;
+  text-align: center;
+  width: 250px;
+  margin: 50px auto;
+  color: #254C73;
+  text-shadow: #93C0E6 0px -1px 0px;
+  text-decoration: none;
+  font-size: 32px;
 }
 
 /*
