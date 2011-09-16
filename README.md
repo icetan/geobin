@@ -4,8 +4,11 @@ geobin
 Start your MongoDB server
 
 > git clone https://icetan@github.com/icetan/geobin.git
+>
 > cd geobin
+>
 > npm install
+>
 > npm start
 
 You can configure the MongoDB server connection in settings.json and also some
