@@ -12,7 +12,7 @@
     ,"underscore": "1.1.x"
   }
   ,"engines": {
-    "node": ">=0.4.9"
+    "node": "0.4.x"
   }
   ,"files": ["server.js", "lib/", "LICENSE", "README.md"]
 }
