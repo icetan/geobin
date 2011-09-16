@@ -3,7 +3,7 @@ geobin
 
 Start your MongoDB server
 
-> git clone https://icetan@github.com/icetan/geobin.git
+> git clone https://github.com/icetan/geobin.git
 >
 > cd geobin
 >
