@@ -18,7 +18,8 @@ var server = http.createServer()
 server.on('request', function (req, res) {
   var url = parseUrl(req.url)
   ,handlePath = (url.pathname.substr(0, rootPath.length) === rootPath)
-  ,handled = 0;
+  ,handled = 0
+  ,handledMethods = 0;
   console.log(req.method+' '+req.url);
   console.dir(req.headers);
   if (handlePath) {
@@ -35,9 +36,6 @@ server.on('request', function (req, res) {
         }
         ,POST: function () {
           controller.saveAnonymousGeo(req, res);
-        }
-        ,OPTIONS: function () {
-            controller.okCors(req, res);
         }
       }
 
@@ -63,22 +61,32 @@ server.on('request', function (req, res) {
           controller.getToken(req, res);
         }
       }
+
+      ,'.*': {
+        OPTIONS: function () {
+          controller.okCors(req, res);
+        }
+      }
     }
     ,function (handler, args) {
-      if (handled++ === 0) {
-        console.dir(arguments);
-        dispatch.route(req.method, handler, function (method) {
-          method.apply(this, args);
-        }
-        ,function () {
-          controller.methodNotAllowed(req, res);
-        });
-      } else {
-        console.log('WARNING: "'+url.pathname+'" matched more than one handler.');
+      handled++;
+      //if (handled++ === 0) {
+      console.dir(arguments);
+      dispatch.route(req.method, handler, function (method) {
+        handledMethods++;
+        method.apply(this, args);
       }
+      ,function () {
+        // Method unhandled.
+      });
+      //} else {
+      //  console.log('WARNING: "'
+      //    +url.pathname+'" matched more than one handler.');
+      //}
     });
   }
   if (handled === 0) controller.notFound(req, res);
+  else if (handledMethods === 0) controller.methodNotAllowed(req, res);
 });
 
 server.listen(conf.serverPort, conf.serverHost);
