@@ -3,13 +3,10 @@ geobin
 
 Fire up your terminal and type:
 
-> git clone https://github.com/icetan/geobin.git
->
-> cd geobin
->
-> npm install
->
-> npm start
+    git clone https://github.com/icetan/geobin.git
+    cd geobin
+    npm install
+    npm start
 
 Don't forget to start your MongoDB server. You can configure your store
 connection in settings.json and also some other stuff.
