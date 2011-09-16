@@ -1,0 +1,13 @@
+{
+  "serverHost": "0.0.0.0"
+  ,"serverPort": 8124
+  ,"serverRootPath": ""
+  ,"dbHost": "127.0.0.1"
+  ,"dbPort": 27017
+  ,"dbName": "test"
+  ,"passwordKey": "7h3p4P1&m4Mi!"
+  ,"passwordSalt": "?fU7ur3_N4rw411z+"
+  ,"headers": {
+    "Access-Control-Allow-Origin": "*"
+  }
+}

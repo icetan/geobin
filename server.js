@@ -1,8 +1,12 @@
 var http = require('http')
 ,parseUrl = require('url').parse
+,fs = require('fs')
+,di = require('./lib/di')
+// Import settings and inject into di module.
+,conf = di.conf = JSON.parse(fs.readFileSync('settings.json'))
+// Load own modules after injection.
 ,controller = require('./lib/controller')
-,dispatch = require('./lib/dispatch')
-,conf = require('./lib/config');
+,dispatch = require('./lib/dispatch');
 
 // If an argument is given in the command line, override server port.
 if (process.argv[2])
