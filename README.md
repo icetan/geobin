@@ -1,7 +1,7 @@
 geobin
 ======
 
-Start your MongoDB server
+Fire up your terminal and type:
 
 > git clone https://github.com/icetan/geobin.git
 >
@@ -11,8 +11,8 @@ Start your MongoDB server
 >
 > npm start
 
-You can configure the MongoDB server connection in settings.json and also some
-other stuff.
+Don't forget to start your MongoDB server. You can configure your store
+connection in settings.json and also some other stuff.
 
 To try out the API, open client/index.html with your favorite browser and just
 press the *Log Position* button. This will store your position in your MongoDB
